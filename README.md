@@ -1,15 +1,15 @@
 # 人脸实时跟踪应用
 
-基于Android 16（SDK 36）、Kotlin语言和OpenCV DNN模型的实时人脸跟踪应用。
+基于 Android 16（SDK 36）、Kotlin 语言和 OpenCV Haar Cascades 的实时人脸检测与跟踪应用。
 
 ## 功能特性
 
 - ✅ 支持前后摄像头切换
-- ✅ 实时人脸检测与跟踪
-- ✅ 显示检测性能指标（FPS、检测人数）
-- ✅ 人脸置信度显示
-- ✅ 动态权限申请
-- ✅ 专业的UI设计，半透明悬浮界面
+- ✅ 实时人脸检测与跟踪（基于 IOU 匹配）
+- ✅ 人脸框显示与置信度颜色分级
+- ✅ 显示人脸 ID 和置信度
+- ✅ 检测分辨率优化（640x480）
+- ✅ 位置平滑算法减少闪烁
 
 ## 技术栈
 
@@ -17,9 +17,9 @@
 - **最低SDK版本**: 27
 - **目标SDK版本**: 36 (Android 16)
 - **编译SDK版本**: 36 (Android 16)
-- **计算机视觉库**: OpenCV 4.10.0
-- **UI绑定**: ViewBinding
-- **人脸检测**: OpenCV DNN模块 (ResNet-10 SSD)
+- **计算机视觉库**: OpenCV 4.9.0
+- **人脸检测**: OpenCV Haar Cascades (haarcascade_frontalface_alt.xml)
+- **跟踪算法**: 基于 IOU 的帧间关联 + 位置平滑
 
 ## 项目结构
 
@@ -27,45 +27,28 @@
 app/src/main/
 ├── java/com/android/example/myapplication/
 │   ├── MainActivity.kt                 # 主Activity
-│   ├── detector/
-│   │   ├── FaceDetector.kt            # 人脸检测器接口
-│   │   ├── FaceTrackingManager.kt      # 人脸跟踪管理器
-│   │   └── OpenCVDNNDetector.kt       # OpenCV DNN实现
-│   ├── camera/
-│   │   └── CameraPreviewManager.kt    # 相机预览管理器
-│   ├── ui/
-│   │   └── FaceOverlayView.kt         # 人脸绘制View
-│   └── utils/
-│       └── PermissionHelper.kt        # 权限申请辅助类
+│   └── detector/
+│       ├── FaceDetector.kt            # Haar Cascades 人脸检测器
+│       └── FaceTrackingManager.kt     # 人脸跟踪管理器
 ├── res/
 │   ├── layout/
-│   │   └── activity_main.xml          # 主布局
-│   └── values/
-│       └── strings.xml                # 字符串资源
-└── assets/                            # 模型文件目录
-    ├── deploy.prototxt                # 模型配置文件
-    └── res10_300x300_ssd_iter_140000.caffemodel  # 预训练模型
+│   │   └── activity_main.xml          # 主布局（含摄像头切换按钮）
+│   └── raw/
+│       └── haarcascade_frontalface_alt.xml  # Haar 模型文件
 ```
 
 ## 快速开始
 
-### 1. 下载模型文件
+### 1. 下载 Haar 模型文件
 
-**Windows用户**:
+**方式1：使用 PowerShell 脚本**
 ```powershell
-.\download_models.ps1
+powershell -ExecutionPolicy Bypass -File download_haar_model.ps1
 ```
 
-**Linux/macOS用户**:
-```bash
-chmod +x download_models.sh
-./download_models.sh
-```
-
-**手动下载**:
-1. 从 [deploy.prototxt](https://raw.githubusercontent.com/opencv/opencv_extra/master/testdata/dnn/face_detector/deploy.prototxt) 下载配置文件
-2. 从 [res10_300x300_ssd_iter_140000.caffemodel](https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel) 下载模型文件
-3. 将文件放到 `app/src/main/assets/` 目录
+**方式2：手动下载**
+1. 访问: https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_alt.xml
+2. 保存到: `app/src/main/res/raw/haarcascade_frontalface_alt.xml`
 
 ### 2. 构建项目
 
@@ -81,61 +64,79 @@ chmod +x download_models.sh
 ./gradlew installDebug
 ```
 
-或在Android Studio中直接运行项目。
+或在 Android Studio 中直接运行项目。
 
 ## 使用说明
 
 ### 权限
-应用首次启动时会请求相机权限，请授予权限以使用人脸跟踪功能。
+应用需要相机权限以使用人脸检测功能。
 
 ### 功能按钮
 
-- **播放/暂停按钮**: 开始或停止人脸检测
-- **切换摄像头按钮**: 在前后摄像头之间切换
-- **截图按钮**: 截取当前画面（待实现）
-- **设置按钮**: 打开设置页面（待实现）
+- **右下角相机图标**: 在前后摄像头之间切换
 
-### 性能指标
+### 显示信息
 
-应用会实时显示以下性能指标：
-- **FPS**: 每秒帧数
-- **检测数**: 当前检测到的人脸数量
-- **相机状态**: 相机的运行状态
+- **人脸框**: 彩色矩形框标识检测到的人脸
+- **标签**: 显示 `ID:X C:Y`，其中 X 为人脸 ID，Y 为置信度（1-20）
+- **颜色分级**:
+  - 黄色: 置信度低（1-2）
+  - 橙色: 置信度中低（3-4）
+  - 浅红: 置信度中高（5-6）
+  - 深红: 置信度高（7-20）
 
 ## 技术实现
 
 ### 人脸检测算法
 
-使用OpenCV DNN模块加载预训练的ResNet-10 SSD模型进行人脸检测：
-- 输入尺寸: 300x300
-- 置信度阈值: 0.7
-- 后端: OpenCV
-- 目标设备: CPU
+使用 OpenCV Haar Cascades 分类器进行人脸检测：
+- 模型: haarcascade_frontalface_alt.xml
+- 检测分辨率: 640x480（自动缩放适配屏幕）
+- 缩放因子 (scaleFactor): 1.15
+- 最小邻居数 (minNeighbors): 4
+- 最小人脸尺寸: 24x24 像素
+
+### 人脸跟踪算法
+
+1. **IOU 匹配**: 计算检测框与跟踪框的重叠度，阈值 0.3
+2. **运动预测**: 基于速度向量预测下一帧位置
+3. **位置平滑**: 使用 0.3 权重进行指数平滑
+4. **置信度系统**:
+   - 成功匹配: 置信度 +1（最大 20）
+   - 丢失跟踪: 置信度 -2（清零时移除）
+   - 显示阈值: 置信度 ≥ 1
 
 ### 性能优化
 
-- 使用单线程执行器处理帧数据
-- 在独立线程中进行模型推理
-- 限制检测区域提高速度
-- 优化UI绘制流程
+- 检测分辨率降低至 640x480，减少计算量
+- 每帧检测，结合跟踪保证实时性
+- 过滤重叠检测（IOU > 0.5）
+- 平滑算法减少闪烁
 
 ## 系统要求
 
 - Android 8.0 (API 27) 或更高版本
 - 支持摄像头的设备
-- 至少2GB RAM
+- 至少 2GB RAM
 - 建议使用中高端设备以获得更好的性能
 
 ## 常见问题
 
-### 1. OpenCV加载失败
-确保OpenCV库正确集成，模型文件已下载到assets目录。
+### 1. OpenCV 加载失败
+确保 OpenCV 库正确集成，Haar 模型文件已下载到 `res/raw` 目录。
 
 ### 2. 人脸检测不工作
-检查相机权限是否已授予，确认模型文件已正确下载。
+检查相机权限是否已授予，确认 `haarcascade_frontalface_alt.xml` 已放置在正确位置。
 
-### 3. 性能问题
-降低检测频率或使用性能更好的设备。
+### 3. 人脸框闪烁
+- 确保在光线良好的环境中使用
+- 避免快速移动头部
+- 如问题持续，可调整 `smoothingFactor` 参数
+
+### 4. 性能问题
+在高分辨率设备上，检测已优化至 640x480。如仍卡顿，可尝试:
+- 降低检测频率（修改 `detectEveryNFrames`）
+- 降低 `scaleFactor` 值以减少检测层级
 
 ## 许可证
 
@@ -144,5 +145,5 @@ chmod +x download_models.sh
 ## 参考资料
 
 - [OpenCV Documentation](https://docs.opencv.org/)
-- [OpenCV DNN Face Detection](https://github.com/opencv/opencv/tree/master/samples/dnn/face_detector)
+- [OpenCV Haar Cascades](https://docs.opencv.org/4.x/db/d28/tutorial_cascade_classifier.html)
 - [Android Developers](https://developer.android.com/)
